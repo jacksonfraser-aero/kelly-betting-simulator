@@ -90,6 +90,45 @@ sell to the maker's bid all game long while it never updates its view.
 The obvious fix -- update your fair-value estimate from the flow hitting
 you, and skew quotes with inventory -- is Day 4.
 
+## Day 4 -- Strategies that fight back
+
+Two upgrades over the naive maker, tested head-to-head on identical
+market conditions (1,500 games per point):
+
+- **Inventory-aware**: skews quotes against its position. Controls risk,
+  learns nothing.
+- **Bayesian**: maintains a posterior over V and updates it on every
+  buy, sell, and pass (noise traders never pass, so a pass is pure
+  signal that V lies between the quotes). Quotes centre on the
+  posterior mean.
+
+Mean P&L as informed flow rises from 0% to 60%:
+
+| Informed share | Naive | Inventory-aware | Bayesian |
+|---:|---:|---:|---:|
+| 0% | 98.0 | 98.4 | 98.6 |
+| 30% | 27.3 | 60.2 | 68.2 |
+| 60% | **-46.2** | 41.0 | **48.4** |
+
+The naive maker's losses were never about bad luck -- they were the
+cost of not listening. The Bayesian maker extracts the information
+content of the same flow that was bleeding the naive one, and stays
+profitable even when a majority of traders are informed.
+
+![Strategy tournament](figures/strategy_tournament.png)
+![Bayesian convergence](figures/bayesian_convergence.png)
+
+## Play it yourself
+
+You can play as the market maker against the same flow, with the naive
+bot scored on the identical trader sequence:
+
+    python scripts/play_market_game.py
+    python scripts/play_market_game.py --rounds 40 --informed 0.5
+
+Watch for one-sided streaks (move your quotes toward the side being
+hit) and passes (you are straddling V -- sit and collect).
+
 ## Usage
 
 Install dependencies and run the experiments:
@@ -98,6 +137,7 @@ Install dependencies and run the experiments:
     python scripts/run_bankroll_sim.py       # Day 1: fraction comparison
     python scripts/run_estimation_study.py   # Day 2: estimated-edge studies
     python scripts/run_market_game.py        # Day 3: adverse selection
+    python scripts/run_tournament.py         # Day 4: strategy tournament
 
 Run the test suite:
 
@@ -112,10 +152,11 @@ Run the test suite:
 - [x] Fractional Kelly as a robustness result
 - [x] Market-making game engine with informed and noise flow
 - [x] Adverse selection study for a fixed-spread maker
-- [ ] Inventory-aware and Bayesian market-making strategies
-- [ ] Strategy tournament: P&L vs informed share by strategy
-- [ ] Human-playable CLI mode
+- [x] Inventory-aware and Bayesian market-making strategies
+- [x] Strategy tournament: P&L vs informed share by strategy
+- [x] Human-playable CLI mode
 - [ ] Simultaneous correlated bets (portfolio Kelly)
+- [ ] Reinforcement-learning market maker (Gymnasium environment)
 
 ## References
 
