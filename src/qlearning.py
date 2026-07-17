@@ -137,6 +137,7 @@ def train(
     agent = QLearningAgent(rng=np.random.default_rng(seed))
     env = MarketMakingEnv(**env_kwargs)
     history = TrainingHistory()
+    best_pnl, best_q = -np.inf, agent.q.copy()
 
     for episode in range(n_episodes):
         eps = epsilon_schedule(episode, n_episodes)
@@ -153,8 +154,15 @@ def train(
             history.eval_episodes.append(episode + 1)
             history.eval_mean_pnl.append(mean_pnl)
             history.epsilons.append(eps)
+            if mean_pnl > best_pnl:
+                best_pnl, best_q = mean_pnl, agent.q.copy()
             if verbose:
                 print(f"episode {episode + 1:>6d}  eps {eps:.2f}  "
                       f"eval mean P&L {mean_pnl:7.1f}")
 
+    # Keep the best checkpoint, not the last: tabular Q-learning with a
+    # constant learning rate oscillates, and the final episode is an
+    # arbitrary place to stop. Selection uses the eval seed block, so
+    # any final reported number must come from a disjoint block.
+    agent.q = best_q
     return agent, history
