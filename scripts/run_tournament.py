@@ -26,6 +26,7 @@ import numpy as np
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from src.market_game import NaiveMarketMaker, draw_true_value, play_game, tournament
+from src.rl_maker import RLMarketMaker
 from src.strategies import BayesianMarketMaker, InventoryAwareMarketMaker
 
 SEED = 42
@@ -42,6 +43,11 @@ STRATEGIES = [
     ("bayesian", lambda: BayesianMarketMaker(1.0)),
     ("bayesian + skew", lambda: BayesianMarketMaker(1.0, inventory_skew=0.1)),
 ]
+
+_QTABLE_PATH = pathlib.Path(__file__).resolve().parents[1] / "models" / "qtable.npy"
+if _QTABLE_PATH.exists():
+    _Q = np.load(_QTABLE_PATH)
+    STRATEGIES.append(("RL (tabular Q)", lambda: RLMarketMaker(_Q)))
 
 
 def convergence_demo() -> None:
