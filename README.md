@@ -1,11 +1,17 @@
 # Kelly Criterion Betting Simulator
 
-A research project on optimal bet sizing and market making under
-uncertainty: how much to bet when you have an edge, what happens when
-that edge is only estimated, and how quoting prices exposes you to
-traders who know more than you do.
+A two-part research project on decision-making under uncertainty in
+markets: **how much to bet** when you have an edge (Kelly sizing, and
+what estimation error does to it), and **how to quote prices** when
+some of your counterparties know more than you (market making, adverse
+selection, and a reinforcement-learning agent that learns to cope).
 
-## Day 1 -- Kelly with a known edge
+Built in Python with numpy; every module unit-tested (40 tests);
+every experiment reproducible from a script with fixed seeds.
+
+## Section 1 -- Bet sizing and market making
+
+### Day 1: Kelly with a known edge
 
 Even-money bet, true win probability p = 0.55 (Kelly optimal f* = 0.10),
 1,000 sequential bets, 20,000 Monte Carlo paths:
@@ -16,8 +22,6 @@ Even-money bet, true win probability p = 0.55 (Kelly optimal f* = 0.10),
 | Half Kelly (f = 0.05) | 42.6 | 142 | 0.003 |
 | Full Kelly (f = 0.10) | 150 | 15,006 | 0.037 |
 | Double Kelly (f = 0.20) | **0.87** | 23.9M | **0.457** |
-
-Key observations:
 
 - **Full Kelly maximises median (typical) growth**, consistent with theory.
 - **Over-betting is catastrophic in the typical case**: double Kelly has a
@@ -31,7 +35,7 @@ Key observations:
 ![Log-growth vs bet fraction](figures/growth_curve.png)
 ![Bankroll paths](figures/bankroll_paths.png)
 
-## Day 2 -- Kelly with an estimated edge
+### Day 2: Kelly with an estimated edge
 
 Real bettors never know p; they estimate it. Here the bettor observes a
 finite history of outcomes, estimates the win rate, and bets
@@ -60,7 +64,7 @@ Kelly, and for conservatism whenever your edge is self-estimated.
 ![Noisy edge](figures/noisy_edge_multiplier.png)
 ![Biased edge](figures/biased_edge_multiplier.png)
 
-## Day 3 -- Market making against informed flow
+### Day 3: Market making against informed flow
 
 A market-making game: a hidden value V (sum of three dice, mean 10.5)
 and a maker quoting bid/ask each round. Noise traders (buy/sell at
@@ -87,10 +91,7 @@ sell to the maker's bid all game long while it never updates its view.
 ![Example game](figures/example_game.png)
 ![Informed share sweep](figures/informed_share_sweep.png)
 
-The obvious fix -- update your fair-value estimate from the flow hitting
-you, and skew quotes with inventory -- is Day 4.
-
-## Day 4 -- Strategies that fight back
+### Day 4: Strategies that fight back
 
 Two upgrades over the naive maker, tested head-to-head on identical
 market conditions (1,500 games per point):
@@ -129,6 +130,66 @@ bot scored on the identical trader sequence:
 Watch for one-sided streaks (move your quotes toward the side being
 hit) and passes (you are straddling V -- sit and collect).
 
+## Section 2 -- A reinforcement-learning market maker
+
+Can a model-free agent, seeing only a coarse summary of the order flow,
+rediscover the quoting strategy that the Bayesian maker derives from
+exact inference? The game becomes a POMDP: the hidden value V never
+appears in the observation, so the agent must infer it from the flow.
+
+**Environment** (src/rl_env.py, Gymnasium API). Observation: four
+discretised features -- flow imbalance (buys minus sells), quote-centre
+offset from the prior, inventory, and a coarse game clock. Action:
+move the quote centre by one of {-1.0, -0.5, 0, +0.5, +1.0} at a fixed
++-1.0 spread. Reward: the per-fill mispricing (ask - V on a sale,
+V - bid on a purchase), which telescopes exactly to the settled P&L --
+a property pinned by a unit test. V is used to compute the reward
+during training but is never observable to the agent.
+
+**Agent** (src/qlearning.py). Tabular Q-learning (Watkins, 1989) over
+7 x 7 x 5 x 3 states x 5 actions, epsilon-greedy exploration decaying
+1.0 -> 0.05, gamma = 1 (episodic, monetary reward). Evaluation is
+firewalled from training: greedy policy, held-out seed blocks, and
+best-checkpoint selection with final reporting on a third, disjoint
+seed block.
+
+**Training results** (30% informed flow). A first run with constant
+alpha = 0.1 oscillated between ~48 and ~18 and happened to end on a
+dip (final-episode snapshot: 20.7) -- the motivation for checkpoint
+selection. With alpha = 0.05 and best-checkpoint selection, the agent
+scores **49.2 over 1,000 fresh held-out games**, against a naive /
+hold-still benchmark of ~29 and a Bayesian-maker ceiling of ~68: the
+agent recovers roughly half of the gap between never adapting and
+exact inference, from four coarse features and no model of the game.
+State-space coverage is 29% of bins -- most extreme-feature
+combinations are simply unreachable in 100-round games.
+
+![RL learning curve](figures/rl_learning_curve.png)
+
+**Tournament entry** (src/rl_maker.py). The frozen Q-table is wrapped
+as a MarketMaker and entered in the Day 4 tournament. Note the agent
+was trained only at 30% informed flow, so the sweep tests it
+out-of-distribution at the extremes:
+
+| Informed share | Naive | Inventory-aware | Bayesian | RL (tabular Q) |
+|---:|---:|---:|---:|---:|
+| 0% | 98.0 | 98.4 | 98.6 | 97.9 |
+| 30% | 27.3 | 60.2 | 68.2 | 50.7 |
+| 60% | -46.2 | 41.0 | 48.4 | 15.3 |
+
+The agent beats the naive maker at every informed share -- and stays
+profitable at 60% informed, where naive loses heavily -- but does not
+overtake the hand-designed inventory-aware heuristic. At this scale of
+state space and training, a good inductive bias is hard to out-learn:
+a limitation stated plainly, and the motivation for the DQN stretch
+goal.
+
+![Strategy tournament](figures/strategy_tournament.png)
+
+Remaining for this section: policy inspection (does the learned table
+skew quotes toward one-sided flow the way a human player learns to?)
+and ablations (sparse vs dense reward; removing the flow feature).
+
 ## Usage
 
 Install dependencies and run the experiments:
@@ -137,7 +198,8 @@ Install dependencies and run the experiments:
     python scripts/run_bankroll_sim.py       # Day 1: fraction comparison
     python scripts/run_estimation_study.py   # Day 2: estimated-edge studies
     python scripts/run_market_game.py        # Day 3: adverse selection
-    python scripts/run_tournament.py         # Day 4: strategy tournament
+    python scripts/run_tournament.py         # Day 4 + RL: strategy tournament
+    python scripts/train_rl_maker.py         # Section 2: train the RL maker
 
 Run the test suite:
 
@@ -155,8 +217,13 @@ Run the test suite:
 - [x] Inventory-aware and Bayesian market-making strategies
 - [x] Strategy tournament: P&L vs informed share by strategy
 - [x] Human-playable CLI mode
+- [x] Gymnasium-style environment with discretised POMDP observations
+- [x] Tabular Q-learning agent with seed-separated evaluation
+- [x] Trained agent entered in the strategy tournament
+- [ ] Policy inspection and heatmaps
+- [ ] Ablations: sparse reward, feature removal
+- [ ] DQN via stable-baselines3 (stretch)
 - [ ] Simultaneous correlated bets (portfolio Kelly)
-- [ ] Reinforcement-learning market maker (Gymnasium environment)
 
 ## References
 
@@ -167,3 +234,6 @@ Run the test suite:
   Criterion.*
 - Glosten, L. & Milgrom, P. (1985). *Bid, Ask and Transaction Prices in a
   Specialist Market with Heterogeneously Informed Traders.*
+- Watkins, C. (1989). *Learning from Delayed Rewards.*
+- Sutton, R. & Barto, A. (2018). *Reinforcement Learning: An
+  Introduction* (2nd ed.), chapters 3 and 6.
