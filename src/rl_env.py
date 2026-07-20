@@ -98,11 +98,13 @@ class MarketMakingEnv(_BASE):
         informed_share: float = 0.3,
         signal_noise: float = 1.0,
         half_spread: float = 1.0,
+        dense_reward: bool = True,
     ) -> None:
         self.n_rounds = n_rounds
         self.phi = informed_share
         self.sigma = signal_noise
         self.half_spread = half_spread
+        self.dense_reward = dense_reward
 
         if _HAS_GYM:
             self.observation_space = spaces.MultiDiscrete(list(N_BINS))
@@ -110,6 +112,7 @@ class MarketMakingEnv(_BASE):
 
         self._rng = np.random.default_rng()
         self._v: int | None = None
+        self._sparse_accum = 0.0
 
     # ------------------------------------------------------------------
     # Gym API
@@ -126,6 +129,7 @@ class MarketMakingEnv(_BASE):
         self._inventory = 0
         self._cash = 0.0
         self._imbalance = 0
+        self._sparse_accum = 0.0
         return self._observation(), {}
 
     def step(self, action: int):
@@ -167,7 +171,19 @@ class MarketMakingEnv(_BASE):
         if terminated:
             info["true_value"] = self._v
             info["final_pnl"] = self._cash + self._inventory * self._v
-        return self._observation(), float(reward), terminated, False, info
+
+        if self.dense_reward:
+            returned_reward = reward
+        else:
+            # Sparse mode: withhold all reward until settlement, where
+            # the agent receives the FULL episode P&L at once. Credit
+            # assignment across n_rounds steps must then be learned
+            # entirely through bootstrapping (gamma * max Q(s', .)),
+            # rather than being handed a signal every round.
+            self._sparse_accum += reward
+            returned_reward = self._sparse_accum if terminated else 0.0
+
+        return self._observation(), float(returned_reward), terminated, False, info
 
     # ------------------------------------------------------------------
     # Internals

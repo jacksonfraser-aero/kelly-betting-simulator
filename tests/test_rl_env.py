@@ -88,3 +88,31 @@ def test_hold_policy_matches_naive_maker_economics():
             _, _, done, _, info = env.step(2)
         pnls.append(info["final_pnl"])
     assert 10 < np.mean(pnls) < 45
+
+
+def test_sparse_mode_pays_out_only_at_settlement():
+    env = MarketMakingEnv(n_rounds=100, dense_reward=False)
+    env.reset(seed=123)
+    rng = np.random.default_rng(0)
+    rewards, done = [], False
+    while not done:
+        _, r, done, _, info = env.step(int(rng.integers(len(CENTRE_MOVES))))
+        rewards.append(r)
+    assert all(r == 0.0 for r in rewards[:-1])
+    assert rewards[-1] == pytest.approx(info["final_pnl"], abs=1e-9)
+
+
+def test_dense_and_sparse_agree_on_total_reward():
+    def rollout(dense, seed, actions):
+        env = MarketMakingEnv(n_rounds=50, dense_reward=dense)
+        env.reset(seed=seed)
+        total = 0.0
+        for a in actions:
+            _, r, *_ = env.step(a)
+            total += r
+        return total
+
+    actions = list(np.random.default_rng(1).integers(0, 5, size=50))
+    dense_total = rollout(True, 7, actions)
+    sparse_total = rollout(False, 7, actions)
+    assert dense_total == pytest.approx(sparse_total, abs=1e-9)
