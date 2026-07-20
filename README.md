@@ -186,9 +186,37 @@ goal.
 
 ![Strategy tournament](figures/strategy_tournament.png)
 
-Remaining for this section: policy inspection (does the learned table
-skew quotes toward one-sided flow the way a human player learns to?)
-and ablations (sparse vs dense reward; removing the flow feature).
+**Policy inspection** (scripts/inspect_policy.py). Cracking open the
+Q-table produced three findings. First, a design discovery: because
+the maker fills every trade, flow imbalance and inventory are
+deterministically linked (inventory = -imbalance) -- the observation
+has three effective degrees of freedom, not four, which explains the
+29% state coverage. Second, Q-values are dominated by state value;
+in many core cells the best action's margin over the runner-up is
+within estimation noise, so the policy maps mask indifferent cells
+rather than paint argmax-over-noise. Third, the decisive cells show
+the agent rediscovered flow-following -- move quotes toward the side
+being hit -- with a +0.33 directional correlation against the
+Bayesian maker's empirical behaviour, plus a learned reversion floor:
+it quotes back up into heavy sell flow once the centre falls below
+where V can plausibly be, having inferred the support of the value
+distribution from experience.
+
+![Policy heatmap](figures/policy_heatmap.png)
+
+**Ablation: reward density** (scripts/ablate_reward_density.py). The
+dense per-fill reward and a sparse settlement-only reward have an
+IDENTICAL total per episode -- the only difference is when the agent
+receives it. Dense reaches its plateau (~54) within ~2,000 episodes;
+sparse eventually reaches a comparable level (~43) but only after a
+catastrophic early dip to -230 and roughly 4x the episodes to
+stabilise. Same objective, same algorithm -- the gap is entirely the
+cost of credit assignment across 100 undifferentiated steps.
+
+![Reward density ablation](figures/reward_density_ablation.png)
+
+Remaining: removing the redundant imbalance feature, which the
+degeneracy finding predicts should now cost nothing.
 
 ## Usage
 
@@ -220,7 +248,7 @@ Run the test suite:
 - [x] Gymnasium-style environment with discretised POMDP observations
 - [x] Tabular Q-learning agent with seed-separated evaluation
 - [x] Trained agent entered in the strategy tournament
-- [ ] Policy inspection and heatmaps
+- [x] Policy inspection and heatmaps
 - [ ] Ablations: sparse reward, feature removal
 - [ ] DQN via stable-baselines3 (stretch)
 - [ ] Simultaneous correlated bets (portfolio Kelly)
