@@ -67,6 +67,11 @@ class MarketMaker:
         self.inventory -= trade.side
         self.cash += trade.side * trade.price
 
+    def on_pass(self, round_idx: int) -> None:
+        """Called when a trader arrives but does not trade. Informed
+        traders pass only when the quotes straddle their signal, so
+        learning strategies can treat a pass as evidence."""
+
     def pnl(self, true_value: float) -> float:
         """Mark-to-settlement P&L: cash plus inventory valued at V."""
         return self.cash + self.inventory * true_value
@@ -140,6 +145,8 @@ def play_game(
         if side != 0:
             price = ask if side == 1 else bid
             maker.on_trade(Trade(t, side, price, informed))
+        else:
+            maker.on_pass(t)
 
         inventory_path[t + 1] = maker.inventory
         pnl_path[t + 1] = maker.pnl(v)
